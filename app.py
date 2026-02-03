@@ -26,11 +26,13 @@ menu = ["Dashboard", "Dataset", "Model Klasifikasi", "Implementasi Algoritma"]
 choice = st.sidebar.selectbox("Pilih Menu", menu)
 
 # ---------------------------
-# Load data
+# Load data dan sesuaikan nama kolom
 # ---------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("maxim_reviews.csv")  # ganti path sesuai data
+    df = pd.read_csv("maxim_reviews.csv")  # file harus ada di repo
+    # rename kolom agar konsisten
+    df.rename(columns={df.columns[0]: 'review_text', df.columns[1]: 'sentiment'}, inplace=True)
     return df
 
 data = load_data()
@@ -39,14 +41,14 @@ data = load_data()
 # Fungsi Preprocessing
 # ---------------------------
 def clean_text(text):
-    text = text.lower()  # lowercase
+    text = str(text).lower()  # lowercase
     text = re.sub(r'\d+', '', text)  # hapus angka
     text = text.translate(str.maketrans('', '', string.punctuation))  # hapus tanda baca
     words = text.split()
     words = [word for word in words if word not in stop_words]  # hapus stopwords
     return ' '.join(words)
 
-data['cleaned_review'] = data['review_text'].astype(str).apply(clean_text)
+data['cleaned_review'] = data['review_text'].apply(clean_text)
 
 # ---------------------------
 # Menu 1: Dashboard
@@ -61,7 +63,6 @@ if choice == "Dashboard":
     sentiment_counts = data['sentiment'].value_counts()
 
     # Bar chart
-    st.markdown("**Bar Chart**")
     fig, ax = plt.subplots()
     sns.barplot(x=sentiment_counts.index, y=sentiment_counts.values, palette="pastel", ax=ax)
     ax.set_xlabel("Sentimen")
@@ -69,7 +70,6 @@ if choice == "Dashboard":
     st.pyplot(fig)
 
     # Pie chart
-    st.markdown("**Pie Chart**")
     fig2, ax2 = plt.subplots()
     ax2.pie(sentiment_counts.values, labels=sentiment_counts.index, autopct='%1.1f%%',
             colors=['#8BC34A','#FFC107','#F44336'])
@@ -116,7 +116,7 @@ elif choice == "Model Klasifikasi":
 
     **Random Forest**  
     - Algoritma ensemble learning berbasis banyak pohon keputusan.  
-    - Mengambil voting mayoritas dari semua pohon untuk prediksi.  
+    - Mengambil voting mayoritas dari semua pohon keputusan.  
 
 Kedua algoritma digunakan untuk **mengklasifikasikan tingkat kepuasan pengguna** menjadi `Puas`, `Netral`, dan `Tidak Puas`.
     """)
