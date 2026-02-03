@@ -33,7 +33,7 @@ choice = st.sidebar.selectbox("Pilih Menu", menu)
 # ---------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("maxim_reviews.csv")  # pastikan CSV ada di repo
+    df = pd.read_csv("maxim_reviews.csv")  # file harus ada di repo
     df.rename(columns={df.columns[0]: 'review_text', df.columns[1]: 'sentiment'}, inplace=True)
     return df
 
@@ -180,7 +180,7 @@ elif choice == "Implementasi Algoritma":
     st.dataframe(df_eval)
     
     # Confusion Matrix
-    labels = le.classes_  # nama label asli
+    labels = le.classes_
     st.subheader("Confusion Matrix XGBoost")
     cm_xgb = confusion_matrix(y_test, pred_xgb)
     fig_cm, ax_cm = plt.subplots()
