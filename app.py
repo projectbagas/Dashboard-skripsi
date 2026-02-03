@@ -1,102 +1,190 @@
 import streamlit as st
 import pandas as pd
-import joblib  # Mengganti pickle agar tidak error EOF/Unpickling
+import matplotlib.pyplot as plt
+import seaborn as sns
+from wordcloud import WordCloud
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
 import re
-import os
+import string
+import nltk
+from nltk.corpus import stopwords
 
-# Set Page Config
-st.set_page_config(page_title="Skripsi Bagas - Maxim Analisis", layout="wide")
+# Download stopwords
+nltk.download('stopwords')
+stop_words = set(stopwords.words('indonesian'))
 
-# Load model dan tfidf yang sudah disimpan
-@st.cache_resource # Agar loading lebih cepat
-def load_assets():
-    # Cek apakah file ada sebelum di-load untuk menghindari crash
-    required = ['model_xgb.pkl', 'model_rf.pkl', 'tfidf_vectorizer.pkl']
-    for f in required:
-        if not os.path.exists(f):
-            st.error(f"File {f} tidak ditemukan di GitHub!")
-            st.stop()
-            
-    # Menggunakan joblib karena lebih stabil di server Cloud daripada pickle
-    model_xgb = joblib.load('model_xgb.pkl')
-    model_rf = joblib.load('model_rf.pkl')
-    tfidf = joblib.load('tfidf_vectorizer.pkl')
-    return model_xgb, model_rf, tfidf
+# ---------------------------
+# Halaman Streamlit
+# ---------------------------
+st.set_page_config(page_title="Dashboard Analisis Kepuasan Maxim", layout="wide")
+st.sidebar.title("Menu")
+menu = ["Dashboard", "Dataset", "Model Klasifikasi", "Implementasi Algoritma"]
+choice = st.sidebar.selectbox("Pilih Menu", menu)
 
-# Menjalankan fungsi load
-try:
-    xgb_model, rf_model, tfidf = load_assets()
-except Exception as e:
-    st.error(f"Terjadi kesalahan saat memuat model: {e}")
-    st.stop()
+# ---------------------------
+# Load data
+# ---------------------------
+@st.cache_data
+def load_data():
+    df = pd.read_csv("/mnt/data/maxim_reviews.csv")  # ganti path sesuai data
+    return df
 
-# --- HEADER ---
-st.title("📊 Dashboard Analisis Kepuasan Pengguna Maxim")
-st.markdown("Oleh: **Bagas Dwi Ardianto** (217006516109)")
-st.divider()
+data = load_data()
 
-# --- SIDEBAR ---
-st.sidebar.header("📂 Data Source")
-uploaded_file = st.sidebar.file_uploader("Upload maxim_reviews.csv", type=['csv'])
+# ---------------------------
+# Fungsi Preprocessing
+# ---------------------------
+def clean_text(text):
+    text = text.lower()  # lowercase
+    text = re.sub(r'\d+', '', text)  # hapus angka
+    text = text.translate(str.maketrans('', '', string.punctuation))  # hapus tanda baca
+    words = text.split()
+    words = [word for word in words if word not in stop_words]  # hapus stopwords
+    return ' '.join(words)
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
+data['cleaned_review'] = data['review_text'].astype(str).apply(clean_text)
+
+# ---------------------------
+# Menu 1: Dashboard
+# ---------------------------
+if choice == "Dashboard":
+    st.title("Dashboard Analisis Kepuasan Pengguna Maxim")
     
-    # Pre-processing sederhana untuk visualisasi
-    def simple_label(score):
-        if score >= 4: return 'Puas'
-        elif score == 3: return 'Netral'
-        else: return 'Tidak Puas'
-    df['label'] = df['score'].apply(simple_label)
+    st.subheader("Jumlah Total Dataset")
+    st.metric("Jumlah Ulasan", len(data))
+    
+    st.subheader("Distribusi Sentimen")
+    sentiment_counts = data['sentiment'].value_counts()
 
-    # --- LAYOUT UTAMA ---
-    tab1, tab2, tab3 = st.tabs(["📈 Statistik Data", "⚖️ Perbandingan Model", "🔍 Uji Sentimen"])
+    # Bar chart
+    st.markdown("**Bar Chart**")
+    fig, ax = plt.subplots()
+    sns.barplot(x=sentiment_counts.index, y=sentiment_counts.values, palette="pastel", ax=ax)
+    ax.set_xlabel("Sentimen")
+    ax.set_ylabel("Jumlah Ulasan")
+    st.pyplot(fig)
 
-    with tab1:
-        st.subheader("Distribusi Sentimen Pengguna")
-        col_a, col_b = st.columns([1, 2])
-        with col_a:
-            st.write("10 Data Pertama:")
-            st.dataframe(df[['content', 'label']].head(10))
-        with col_b:
-            st.bar_chart(df['label'].value_counts())
-
-    with tab2:
-        st.subheader("Hasil Evaluasi (Sesuai Bab 4)")
-        c1, c2 = st.columns(2)
-        # Angka disesuaikan dengan isi skripsi Anda
-        c1.metric("Akurasi XGBoost", "93%", "Lebih Unggul")
-        c2.metric("Akurasi Random Forest", "80%", "-13%", delta_color="inverse")
-        
-        st.table(pd.DataFrame({
-            'Metrik': ['Presisi', 'Recall', 'F1-Score'],
-            'XGBoost': [0.88, 0.93, 0.90],
-            'Random Forest': [0.73, 0.80, 0.77]
-        }))
-
-    with tab3:
-        st.subheader("Live Sentiment Testing")
-        raw_text = st.text_area("Masukkan ulasan baru untuk diprediksi:")
-        method = st.radio("Pilih Algoritma:", ("XGBoost", "Random Forest"))
-
-        if st.button("Analisis Sekarang"):
-            if raw_text:
-                # 1. Transform teks input
-                clean_input = re.sub(r'[^a-z\s]', '', raw_text.lower())
-                vec_input = tfidf.transform([clean_input])
-                
-                # 2. Predict
-                if method == "XGBoost":
-                    res = xgb_model.predict(vec_input)[0]
-                else:
-                    res = rf_model.predict(vec_input)[0]
-                
-                # 3. Map result (Sesuaikan dengan urutan LabelEncoder Anda)
-                # Umumnya: 0: Tidak Puas, 1: Netral, 2: Puas
-                labels = {0: "Tidak Puas ❌", 1: "Netral 😐", 2: "Puas ✅"}
-                st.success(f"Hasil Prediksi ({method}): {labels[res]}")
+    # Pie chart
+    st.markdown("**Pie Chart**")
+    fig2, ax2 = plt.subplots()
+    ax2.pie(sentiment_counts.values, labels=sentiment_counts.index, autopct='%1.1f%%',
+            colors=['#8BC34A','#FFC107','#F44336'])
+    ax2.set_title("Distribusi Sentimen")
+    st.pyplot(fig2)
+    
+    # Word Cloud
+    st.subheader("Word Cloud Per Sentimen")
+    def generate_wordcloud(text):
+        return WordCloud(width=800, height=400, background_color='white').generate(' '.join(text))
+    
+    tab1, tab2, tab3 = st.tabs(["Puas", "Netral", "Tidak Puas"])
+    tabs = [tab1, tab2, tab3]
+    categories = ["Puas", "Netral", "Tidak Puas"]
+    
+    for tab, sentiment in zip(tabs, categories):
+        with tab:
+            subset = data[data['sentiment'] == sentiment]
+            if not subset.empty:
+                wc = generate_wordcloud(subset['cleaned_review'])
+                fig_wc, ax_wc = plt.subplots(figsize=(10,5))
+                ax_wc.imshow(wc, interpolation='bilinear')
+                ax_wc.axis('off')
+                st.pyplot(fig_wc)
             else:
-                st.warning("Silahkan masukkan teks terlebih dahulu.")
+                st.write(f"Tidak ada data untuk kategori {sentiment}")
 
-else:
-    st.info("Silahkan upload file `maxim_reviews.csv` pada sidebar untuk memulai.")
+# ---------------------------
+# Menu 2: Dataset
+# ---------------------------
+elif choice == "Dataset":
+    st.title("Dataset Mentah & Preprocessed")
+    st.dataframe(data[['review_text','sentiment','cleaned_review']])
+
+# ---------------------------
+# Menu 3: Model Klasifikasi
+# ---------------------------
+elif choice == "Model Klasifikasi":
+    st.title("Penjelasan Model Klasifikasi")
+    st.markdown("""
+    **XGBoost**  
+    - Algoritma boosting berbasis pohon keputusan.  
+    - Mengoptimalkan prediksi melalui iterasi dan pengurangan error.  
+
+    **Random Forest**  
+    - Algoritma ensemble learning berbasis banyak pohon keputusan.  
+    - Mengambil voting mayoritas dari semua pohon untuk prediksi.  
+
+Kedua algoritma digunakan untuk **mengklasifikasikan tingkat kepuasan pengguna** menjadi `Puas`, `Netral`, dan `Tidak Puas`.
+    """)
+
+# ---------------------------
+# Menu 4: Implementasi Algoritma
+# ---------------------------
+elif choice == "Implementasi Algoritma":
+    st.title("Implementasi dan Evaluasi Model")
+    
+    # Pilihan vectorizer
+    vectorizer_type = st.selectbox("Pilih Vectorizer", ["CountVectorizer", "TfidfVectorizer"])
+    if vectorizer_type == "CountVectorizer":
+        vectorizer = CountVectorizer()
+    else:
+        vectorizer = TfidfVectorizer()
+    
+    X_vect = vectorizer.fit_transform(data['cleaned_review'])
+    y = data['sentiment']
+    
+    X_train, X_test, y_train, y_test = train_test_split(X_vect, y, test_size=0.2, random_state=42)
+    
+    # XGBoost
+    model_xgb = XGBClassifier(use_label_encoder=False, eval_metric='mlogloss')
+    model_xgb.fit(X_train, y_train)
+    pred_xgb = model_xgb.predict(X_test)
+    
+    # Random Forest
+    model_rf = RandomForestClassifier()
+    model_rf.fit(X_train, y_train)
+    pred_rf = model_rf.predict(X_test)
+    
+    # Evaluasi
+    def evaluate(y_true, y_pred):
+        return {
+            "Accuracy": accuracy_score(y_true, y_pred),
+            "Precision": precision_score(y_true, y_pred, average='weighted'),
+            "Recall": recall_score(y_true, y_pred, average='weighted'),
+            "F1-Score": f1_score(y_true, y_pred, average='weighted')
+        }
+    
+    eval_xgb = evaluate(y_test, pred_xgb)
+    eval_rf = evaluate(y_test, pred_rf)
+    
+    st.subheader("Perbandingan Metrik Evaluasi")
+    df_eval = pd.DataFrame({
+        "Metrik": ["Accuracy", "Precision", "Recall", "F1-Score"],
+        "XGBoost": [eval_xgb["Accuracy"], eval_xgb["Precision"], eval_xgb["Recall"], eval_xgb["F1-Score"]],
+        "Random Forest": [eval_rf["Accuracy"], eval_rf["Precision"], eval_rf["Recall"], eval_rf["F1-Score"]]
+    })
+    st.dataframe(df_eval)
+    
+    # Confusion Matrix XGBoost
+    st.subheader("Confusion Matrix XGBoost")
+    cm_xgb = confusion_matrix(y_test, pred_xgb, labels=["Puas","Netral","Tidak Puas"])
+    fig_cm, ax_cm = plt.subplots()
+    sns.heatmap(cm_xgb, annot=True, fmt='d', cmap='Blues', xticklabels=["Puas","Netral","Tidak Puas"],
+                yticklabels=["Puas","Netral","Tidak Puas"], ax=ax_cm)
+    ax_cm.set_xlabel("Predicted")
+    ax_cm.set_ylabel("Actual")
+    st.pyplot(fig_cm)
+    
+    # Confusion Matrix Random Forest
+    st.subheader("Confusion Matrix Random Forest")
+    cm_rf = confusion_matrix(y_test, pred_rf, labels=["Puas","Netral","Tidak Puas"])
+    fig_cm2, ax_cm2 = plt.subplots()
+    sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Greens', xticklabels=["Puas","Netral","Tidak Puas"],
+                yticklabels=["Puas","Netral","Tidak Puas"], ax=ax_cm2)
+    ax_cm2.set_xlabel("Predicted")
+    ax_cm2.set_ylabel("Actual")
+    st.pyplot(fig_cm2)
