@@ -1,6 +1,8 @@
+streamlit
 pandas
-scikit-learn
-xgboost
-joblib
 matplotlib
 seaborn
+wordcloud
+scikit-learn
+xgboost
+nltk
