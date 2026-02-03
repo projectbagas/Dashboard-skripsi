@@ -30,7 +30,7 @@ choice = st.sidebar.selectbox("Pilih Menu", menu)
 # ---------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("/mnt/data/maxim_reviews.csv")  # ganti path sesuai data
+    df = pd.read_csv("maxim_reviews.csv")  # ganti path sesuai data
     return df
 
 data = load_data()
