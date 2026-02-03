@@ -8,12 +8,15 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from xgboost import XGBClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 import re
 import string
 import nltk
 from nltk.corpus import stopwords
 
-# Download stopwords
+# ---------------------------
+# Setup NLTK
+# ---------------------------
 nltk.download('stopwords')
 stop_words = set(stopwords.words('indonesian'))
 
@@ -26,29 +29,34 @@ menu = ["Dashboard", "Dataset", "Model Klasifikasi", "Implementasi Algoritma"]
 choice = st.sidebar.selectbox("Pilih Menu", menu)
 
 # ---------------------------
-# Load data dan sesuaikan nama kolom
+# Load Data dan rename kolom otomatis
 # ---------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("maxim_reviews.csv")  # file harus ada di repo
-    # rename kolom agar konsisten
+    df = pd.read_csv("maxim_reviews.csv")  # pastikan CSV ada di repo
     df.rename(columns={df.columns[0]: 'review_text', df.columns[1]: 'sentiment'}, inplace=True)
     return df
 
 data = load_data()
 
 # ---------------------------
-# Fungsi Preprocessing
+# Preprocessing Teks
 # ---------------------------
 def clean_text(text):
-    text = str(text).lower()  # lowercase
-    text = re.sub(r'\d+', '', text)  # hapus angka
-    text = text.translate(str.maketrans('', '', string.punctuation))  # hapus tanda baca
+    text = str(text).lower()
+    text = re.sub(r'\d+', '', text)
+    text = text.translate(str.maketrans('', '', string.punctuation))
     words = text.split()
-    words = [word for word in words if word not in stop_words]  # hapus stopwords
+    words = [word for word in words if word not in stop_words]
     return ' '.join(words)
 
 data['cleaned_review'] = data['review_text'].apply(clean_text)
+
+# ---------------------------
+# Encode Label
+# ---------------------------
+le = LabelEncoder()
+data['sentiment_encoded'] = le.fit_transform(data['sentiment'])
 
 # ---------------------------
 # Menu 1: Dashboard
@@ -56,27 +64,29 @@ data['cleaned_review'] = data['review_text'].apply(clean_text)
 if choice == "Dashboard":
     st.title("Dashboard Analisis Kepuasan Pengguna Maxim")
     
+    # Jumlah total dataset
     st.subheader("Jumlah Total Dataset")
     st.metric("Jumlah Ulasan", len(data))
     
+    # Distribusi Sentimen
     st.subheader("Distribusi Sentimen")
     sentiment_counts = data['sentiment'].value_counts()
 
-    # Bar chart
+    # Bar Chart
     fig, ax = plt.subplots()
     sns.barplot(x=sentiment_counts.index, y=sentiment_counts.values, palette="pastel", ax=ax)
     ax.set_xlabel("Sentimen")
     ax.set_ylabel("Jumlah Ulasan")
     st.pyplot(fig)
 
-    # Pie chart
+    # Pie Chart
     fig2, ax2 = plt.subplots()
     ax2.pie(sentiment_counts.values, labels=sentiment_counts.index, autopct='%1.1f%%',
             colors=['#8BC34A','#FFC107','#F44336'])
     ax2.set_title("Distribusi Sentimen")
     st.pyplot(fig2)
-    
-    # Word Cloud
+
+    # Word Cloud per Sentimen di Tab
     st.subheader("Word Cloud Per Sentimen")
     def generate_wordcloud(text):
         return WordCloud(width=800, height=400, background_color='white').generate(' '.join(text))
@@ -102,7 +112,7 @@ if choice == "Dashboard":
 # ---------------------------
 elif choice == "Dataset":
     st.title("Dataset Mentah & Preprocessed")
-    st.dataframe(data[['review_text','sentiment','cleaned_review']])
+    st.dataframe(data[['review_text','sentiment','cleaned_review','sentiment_encoded']])
 
 # ---------------------------
 # Menu 3: Model Klasifikasi
@@ -112,11 +122,11 @@ elif choice == "Model Klasifikasi":
     st.markdown("""
     **XGBoost**  
     - Algoritma boosting berbasis pohon keputusan.  
-    - Mengoptimalkan prediksi melalui iterasi dan pengurangan error.  
+    - Optimalkan prediksi melalui iterasi dan pengurangan error.  
 
     **Random Forest**  
     - Algoritma ensemble learning berbasis banyak pohon keputusan.  
-    - Mengambil voting mayoritas dari semua pohon keputusan.  
+    - Voting mayoritas dari semua pohon keputusan.  
 
 Kedua algoritma digunakan untuk **mengklasifikasikan tingkat kepuasan pengguna** menjadi `Puas`, `Netral`, dan `Tidak Puas`.
     """)
@@ -135,7 +145,7 @@ elif choice == "Implementasi Algoritma":
         vectorizer = TfidfVectorizer()
     
     X_vect = vectorizer.fit_transform(data['cleaned_review'])
-    y = data['sentiment']
+    y = data['sentiment_encoded']
     
     X_train, X_test, y_train, y_test = train_test_split(X_vect, y, test_size=0.2, random_state=42)
     
@@ -169,22 +179,20 @@ elif choice == "Implementasi Algoritma":
     })
     st.dataframe(df_eval)
     
-    # Confusion Matrix XGBoost
+    # Confusion Matrix
+    labels = le.classes_  # nama label asli
     st.subheader("Confusion Matrix XGBoost")
-    cm_xgb = confusion_matrix(y_test, pred_xgb, labels=["Puas","Netral","Tidak Puas"])
+    cm_xgb = confusion_matrix(y_test, pred_xgb)
     fig_cm, ax_cm = plt.subplots()
-    sns.heatmap(cm_xgb, annot=True, fmt='d', cmap='Blues', xticklabels=["Puas","Netral","Tidak Puas"],
-                yticklabels=["Puas","Netral","Tidak Puas"], ax=ax_cm)
+    sns.heatmap(cm_xgb, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels, ax=ax_cm)
     ax_cm.set_xlabel("Predicted")
     ax_cm.set_ylabel("Actual")
     st.pyplot(fig_cm)
     
-    # Confusion Matrix Random Forest
     st.subheader("Confusion Matrix Random Forest")
-    cm_rf = confusion_matrix(y_test, pred_rf, labels=["Puas","Netral","Tidak Puas"])
+    cm_rf = confusion_matrix(y_test, pred_rf)
     fig_cm2, ax_cm2 = plt.subplots()
-    sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Greens', xticklabels=["Puas","Netral","Tidak Puas"],
-                yticklabels=["Puas","Netral","Tidak Puas"], ax=ax_cm2)
+    sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Greens', xticklabels=labels, yticklabels=labels, ax=ax_cm2)
     ax_cm2.set_xlabel("Predicted")
     ax_cm2.set_ylabel("Actual")
     st.pyplot(fig_cm2)
